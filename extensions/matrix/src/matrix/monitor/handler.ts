@@ -2,7 +2,12 @@ import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth";
 import { resolveChannelContextVisibilityMode } from "openclaw/plugin-sdk/config-runtime";
 import { getSessionBindingService } from "openclaw/plugin-sdk/conversation-runtime";
 import { evaluateSupplementalContextVisibility } from "openclaw/plugin-sdk/security-runtime";
-import type { CoreConfig, MatrixRoomConfig, ReplyToMode } from "../../types.js";
+import type {
+  CoreConfig,
+  MatrixRoomConfig,
+  MatrixStreamingMode,
+  ReplyToMode,
+} from "../../types.js";
 import { createMatrixDraftStream } from "../draft-stream.js";
 import { isMatrixMediaSizeLimitError } from "../media-errors.js";
 import {
@@ -101,7 +106,7 @@ export type MatrixMonitorHandlerParams = {
   threadReplies: "off" | "inbound" | "always";
   /** DM-specific threadReplies override. Falls back to threadReplies when absent. */
   dmThreadReplies?: "off" | "inbound" | "always";
-  streaming: "partial" | "off";
+  streaming: MatrixStreamingMode;
   blockStreamingEnabled: boolean;
   dmEnabled: boolean;
   dmPolicy: "open" | "pairing" | "allowlist" | "disabled";
@@ -1181,13 +1186,15 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           });
         },
       });
-      const draftStreamingEnabled = streaming === "partial";
+      const draftStreamingEnabled = streaming !== "off";
+      const quietDraftStreaming = streaming === "quiet";
       const draftReplyToId = replyToMode !== "off" && !threadTarget ? _messageId : undefined;
       const draftStream = draftStreamingEnabled
         ? createMatrixDraftStream({
             roomId,
             client,
             cfg,
+            mode: quietDraftStreaming ? "quiet" : "partial",
             threadId: threadTarget,
             replyToId: draftReplyToId,
             preserveReplyId: replyToMode === "all",
@@ -1320,7 +1327,9 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
                     cfg,
                     threadId: threadTarget,
                     accountId: _route.accountId,
-                    extraContent: buildMatrixFinalizedPreviewContent(),
+                    extraContent: quietDraftStreaming
+                      ? buildMatrixFinalizedPreviewContent()
+                      : undefined,
                   });
                 } catch {
                   await redactMatrixDraftEvent(client, roomId, draftEventId);
